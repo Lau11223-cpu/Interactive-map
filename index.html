@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Interactive Map with Comments</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <style>
+    #map {
+      height: 500px;
+      width: 100%;
+      cursor: crosshair; /* Makes the cursor look like a crosshair */
+    }
+    #instructions {
+      text-align: center;
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Leave Comments on Intersections</h1>
+  <!-- Instructions for users -->
+  <div id="instructions">
+    <p>Click on any intersection to leave a comment!</p>
+  </div>
+  <!-- The map container -->
+  <div id="map"></div>
+
+  <script>
+    // Initialize the map centered on Orange City, NJ
+    const map = L.map('map').setView([40.7706, -74.2328], 15); // Zoom level increased to 15
+
+    // Add OpenStreetMap base map
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    // JSONBin.io configuration
+    const binId = '67bcdbf6e41b4d34e49b1c8f'; // Replace with your actual bin ID
+    const apiKey = '$2a$10$PGS8gCfpOBfYY7HTfnL7duOi8OcIcLaRTdZRDMqgmHnMdLu4URlG.'; // Replace with your actual API key
+
+    // Save a comment to JSONBin.io
+    function saveComment(lat, lng, comment) {
+      const data = { lat, lng, comment };
+
+      // Fetch the existing bin
+      fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+        headers: {
+          'X-Master-Key': apiKey,
+        },
+      })
+      .then(response => response.json())
+      .then(result => {
+        const existingData = result.record || { comments: [] };
+
+        // Add the new comment to the existing data
+        existingData.comments.push(data);
+
+        // Update the bin with the new data
+        return fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': apiKey,
+          },
+          body: JSON.stringify(existingData),
+        });
+      })
+      .then(response => response.json())
+      .then(result => console.log('Comment saved!', result))
+      .catch(error => console.error('Error saving comment:', error));
+    }
+
+    // Load comments from JSONBin.io
+    function loadComments(map) {
+      fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+        headers: {
+          'X-Master-Key': apiKey,
+        },
+      })
+      .then(response => response.json())
+      .then(result => {
+        const comments = result.record?.comments || [];
+        comments.forEach((comment) => {
+          L.marker([comment.lat, comment.lng]).addTo(map)
+            .bindPopup(comment.comment)
+            .openPopup();
+        });
+      })
+      .catch(error => console.error('Error loading comments:', error));
+    }
+
+    // Add click event listener to the map
+    map.on('click', (event) => {
+      const latitude = event.latlng.lat;
+      const longitude = event.latlng.lng;
+      const comment = prompt("Leave a comment about this intersection:");
+
+      if (comment) {
+        // Save the comment to JSONBin.io
+        saveComment(latitude, longitude, comment);
+
+        // Add a marker with the comment
+        L.marker([latitude, longitude]).addTo(map)
+          .bindPopup(comment)
+          .openPopup();
+      }
+    });
+
+    // Load existing comments when the map loads
+    loadComments(map);
+  </script>
+</body>
+</html>
