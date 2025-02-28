@@ -1,115 +1,194 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Interactive Map with Comments</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArcGIS Map with Comments</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.25/esri/themes/light/main.css">
   <style>
-    #map {
-      height: 500px;
+    html, body, #map {
+      height: 100vh;
       width: 100%;
-      cursor: crosshair; /* Makes the cursor look like a crosshair */
+      margin: 0;
+      padding: 0;
     }
-    #instructions {
+    #instruction {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
       text-align: center;
-      font-size: 18px;
-      margin-bottom: 20px;
-      color: #333;
+      font-size: 20px;
+      max-width: 600px;
+    }
+    #comment-form {
+      position: absolute;
+      top: 150px; /* Adjusted to be below the instruction */
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+      display: none;
+    }
+    #comment-form textarea {
+      width: 100%;
+      height: 60px;
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>Leave Comments on Intersections</h1>
-  <!-- Instructions for users -->
-  <div id="instructions">
-    <p>Click on any intersection to leave a comment!</p>
+  <!-- Instruction -->
+  <div id="instruction">
+    Hi, please click at any intersection you may have comments, and tell us your thoughts.<br>
+    Notes: Please ensure to long press the left mouse button to drag the map, scroll your mouse wheel to zoom in/out the map, and single click on the exact intersection to leave a comment.
   </div>
-  <!-- The map container -->
+
+  <!-- Comment Form -->
+  <div id="comment-form">
+    <textarea id="comment-input" placeholder="Leave a comment..."></textarea>
+    <button id="submit-comment">Submit</button>
+  </div>
+
+  <!-- Map Container -->
   <div id="map"></div>
 
+  <!-- Load ArcGIS JavaScript API -->
+  <script src="https://js.arcgis.com/4.25/"></script>
   <script>
-    // Initialize the map centered on Orange City, NJ
-    const map = L.map('map').setView([40.7706, -74.2328], 15); // Zoom level increased to 15
+    require([
+      "esri/config",
+      "esri/WebMap",
+      "esri/views/MapView",
+      "esri/Graphic",
+      "esri/layers/GraphicsLayer",
+      "esri/symbols/SimpleMarkerSymbol"
+    ], function (
+      esriConfig, WebMap, MapView, Graphic, GraphicsLayer, SimpleMarkerSymbol
+    ) {
+      // Set your ArcGIS API key
+      esriConfig.apiKey = "AAPTxy8BH1VEsoebNVZXo8HurCP8tKQj4-TYlf9y6ngDjC1E7FKvV9d50NBX88jzwBlTZQe-ElkwdgbSyGvqeGIvhQhghMtDm7YYqk6aSX96Vs22R66epWV8N18EWBoOcCjtcWFRkoo6exo0WBkB4JnfKO0KJ35pKmowR8hS0Sg-q2iJoY250QtL9fk2BX3ESU6j2FnMG14gW6o67yD-MFxhDd3g4a_xF7KKgRwbvQEqBnM.AT1_5X6kXWbs";
 
-    // Add OpenStreetMap base map
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+      // Load the web map from ArcGIS Online
+      const webmap = new WebMap({
+        portalItem: {
+          id: "c1fa0490cd454047890e55834830aa56" // Replace with your Web Map ID
+        }
+      });
 
-    // JSONBin.io configuration
-    const binId = '67bcdbf6e41b4d34e49b1c8f'; // Replace with your actual bin ID
-    const apiKey = '$2a$10$PGS8gCfpOBfYY7HTfnL7duOi8OcIcLaRTdZRDMqgmHnMdLu4URlG.'; // Replace with your actual API key
+      // Initialize the map view
+      const view = new MapView({
+        container: "map",
+        map: webmap,
+        center: [-74.218, 40.767], // Longitude, latitude
+        zoom: 14.5
+      });
 
-    // Save a comment to JSONBin.io
-    function saveComment(lat, lng, comment) {
-      const data = { lat, lng, comment };
+      // Add a graphics layer for comments and intersection markers
+      const graphicsLayer = new GraphicsLayer();
+      webmap.add(graphicsLayer);
 
-      // Fetch the existing bin
-      fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-        headers: {
-          'X-Master-Key': apiKey,
-        },
-      })
-      .then(response => response.json())
-      .then(result => {
-        const existingData = result.record || { comments: [] };
+      // Variables to store the clicked location
+      let clickedLocation = null;
 
-        // Add the new comment to the existing data
-        existingData.comments.push(data);
+      // Show the comment form and visualize the intersection when the map is clicked
+      view.on("click", (event) => {
+        clickedLocation = event.mapPoint;
 
-        // Update the bin with the new data
-        return fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Master-Key': apiKey,
-          },
-          body: JSON.stringify(existingData),
+        // Visualize the intersection with a marker
+        const intersectionMarker = new Graphic({
+          geometry: clickedLocation,
+          symbol: new SimpleMarkerSymbol({
+            color: [255, 0, 0, 0.8], // Red marker
+            size: 10,
+            outline: {
+              color: [255, 255, 255],
+              width: 2
+            }
+          })
         });
-      })
-      .then(response => response.json())
-      .then(result => console.log('Comment saved!', result))
-      .catch(error => console.error('Error saving comment:', error));
-    }
 
-    // Load comments from JSONBin.io
-    function loadComments(map) {
-      fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-        headers: {
-          'X-Master-Key': apiKey,
-        },
-      })
-      .then(response => response.json())
-      .then(result => {
-        const comments = result.record?.comments || [];
-        comments.forEach((comment) => {
-          L.marker([comment.lat, comment.lng]).addTo(map)
-            .bindPopup(comment.comment)
-            .openPopup();
-        });
-      })
-      .catch(error => console.error('Error loading comments:', error));
-    }
+        // Clear previous markers and add the new one
+        graphicsLayer.removeAll();
+        graphicsLayer.add(intersectionMarker);
 
-    // Add click event listener to the map
-    map.on('click', (event) => {
-      const latitude = event.latlng.lat;
-      const longitude = event.latlng.lng;
-      const comment = prompt("Leave a comment about this intersection:");
+        // Show the comment form
+        document.getElementById("comment-form").style.display = "block";
+      });
 
-      if (comment) {
-        // Save the comment to JSONBin.io
-        saveComment(latitude, longitude, comment);
+      // Handle comment submission
+      document.getElementById("submit-comment").addEventListener("click", async () => {
+        const comment = document.getElementById("comment-input").value.trim();
+        if (comment && clickedLocation) {
+          // Add a graphic for the comment
+          const commentGraphic = new Graphic({
+            geometry: clickedLocation,
+            symbol: {
+              type: "text",
+              color: "blue",
+              text: "💬", // Comment icon
+              font: { size: 12 }
+            },
+            attributes: { comment }
+          });
+          graphicsLayer.add(commentGraphic);
 
-        // Add a marker with the comment
-        L.marker([latitude, longitude]).addTo(map)
-          .bindPopup(comment)
-          .openPopup();
+          // Save the comment to JSONbin.io
+          const apiKey = "$2a$10$PGS8gCfpOBfYY7HTfnL7duOi8OcIcLaRTdZRDMqgmHnMdLu4URlG."; // Replace with your JSONbin.io API key
+          const binId = "67bcdbf6e41b4d34e49b1c8f"; // Replace with your JSONbin.io bin ID
+          const url = `https://api.jsonbin.io/v3/b/${binId}`;
+
+          try {
+            const response = await fetch(url, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Master-Key": apiKey
+              },
+              body: JSON.stringify({
+                comments: [
+                  ...(await fetchComments()), // Fetch existing comments
+                  { location: [clickedLocation.longitude, clickedLocation.latitude], comment }
+                ]
+              })
+            });
+
+            if (!response.ok) throw new Error("Failed to save comment");
+            console.log("Comment saved successfully!");
+          } catch (error) {
+            console.error("Error saving comment:", error);
+          }
+
+          // Reset the form
+          document.getElementById("comment-input").value = "";
+          document.getElementById("comment-form").style.display = "none";
+        }
+      });
+
+      // Function to fetch existing comments from JSONbin.io
+      async function fetchComments() {
+        const apiKey = "YOUR_JSONBIN_API_KEY"; // Replace with your JSONbin.io API key
+        const binId = "YOUR_BIN_ID"; // Replace with your JSONbin.io bin ID
+        const url = `https://api.jsonbin.io/v3/b/${binId}`;
+
+        try {
+          const response = await fetch(url, {
+            headers: { "X-Master-Key": apiKey }
+          });
+          const data = await response.json();
+          return data.record.comments || [];
+        } catch (error) {
+          console.error("Error fetching comments:", error);
+          return [];
+        }
       }
     });
-
-    // Load existing comments when the map loads
-    loadComments(map);
   </script>
 </body>
 </html>
